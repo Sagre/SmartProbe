@@ -1,0 +1,33 @@
+&wifi {
+	status = "okay";
+};
+
+/ {
+    zephyr,user {
+        /* IO4 (Pin 18) is ADC1 Channel 4 */
+        io-channels = <&adc0 4>; 
+        /* IO3 (Pin 6) for VCC control */
+        pwr-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+        /* IO2 (Pin 5) for software GND */
+        gnd-gpios = <&gpio0 2 GPIO_ACTIVE_LOW>; 
+    };
+};
+
+/* Use SAR ADC1 (adc0) which is defined and factory calibrated */
+&adc0 {
+    status = "okay";
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    channel@4 {
+        reg = <4>; /* ADC1_CH4 on IO4 */
+        zephyr,gain = "ADC_GAIN_1_4";      /* Range for 0-3.0V sensor output */
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>;
+    };
+};
+
+&gpio0 {
+    status = "okay";
+};
