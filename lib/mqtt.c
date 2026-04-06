@@ -5,7 +5,7 @@
  */
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(mqtt_service, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(mqtt_service, LOG_LEVEL_INF);
 
 #include <zephyr/posix/poll.h>
 #include <zephyr/posix/arpa/inet.h>
@@ -179,8 +179,6 @@ void mqtt_evt_handler(struct mqtt_client *const client,
 			break;
 		}
 
-		LOG_INF("PUBACK packet id: %u", evt->param.puback.message_id);
-
 		break;
 
 	case MQTT_EVT_PUBREC:
@@ -188,8 +186,6 @@ void mqtt_evt_handler(struct mqtt_client *const client,
 			LOG_ERR("MQTT PUBREC error %d", evt->result);
 			break;
 		}
-
-		LOG_INF("PUBREC packet id: %u", evt->param.pubrec.message_id);
 
 		const struct mqtt_pubrel_param rel_param = {
 			.message_id = evt->param.pubrec.message_id
@@ -208,13 +204,9 @@ void mqtt_evt_handler(struct mqtt_client *const client,
 			break;
 		}
 
-		LOG_INF("PUBCOMP packet id: %u",
-			evt->param.pubcomp.message_id);
-
 		break;
 
 	case MQTT_EVT_PINGRESP:
-		LOG_INF("PINGRESP packet");
 		break;
 
 	default:

@@ -61,7 +61,6 @@ void ping(char* ipv4_addr, uint8_t count)
 		if (ret != 0) {
 			LOG_ERR("Failed to send ping, err: %d", ret);
 		}
-		k_sleep(K_SECONDS(2));
 	}
 
 	net_icmp_cleanup_ctx(&icmp_context);

@@ -3,6 +3,22 @@
 };
 
 / {
+    aliases {
+        led0 = &status_led;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        status_led: led_0 {
+            /* GPIO8 is on the gpio0 controller */
+            /* GPIO_ACTIVE_LOW matches your physical wiring (+3.3V source) */
+            gpios = <&gpio0 8 GPIO_ACTIVE_LOW>;
+            label = "User Status LED";
+        };
+    };
+};
+
+/ {
     zephyr,user {
         /* IO4 (Pin 18) is ADC1 Channel 4 */
         io-channels = <&adc0 4>; 

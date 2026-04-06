@@ -10,10 +10,8 @@
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/net/net_event.h>
-#include <zephyr/net/net_mgmt.h>     /* For network management events */
+#include <zephyr/net/net_mgmt.h>
 #include <errno.h>
-#include "http_get.h"
-#include "ping.h"
 #include <zephyr/logging/log.h>
 
 #include <zephyr/device.h>
@@ -32,12 +30,12 @@ static K_SEM_DEFINE(ipv4_address_obtained, 0, 1);
 static struct net_mgmt_event_callback wifi_cb;
 static struct net_mgmt_event_callback ipv4_cb;
 
-static void check_wifi_status(void) {
+static int check_wifi_status(void) {
     if (!device_is_ready(wifi_dev)) {
         LOG_ERR("WiFi device hardware not ready!");
-        return;
+        return -1;
     }
-    LOG_INF("WiFi hardware driver initialized.");
+    return 0;
 }
 
 static void handle_wifi_connect_result(struct net_mgmt_event_callback *cb)
@@ -76,32 +74,16 @@ static void handle_ipv4_result(struct net_if *iface)
 
     for (i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
 
-        char buf[NET_IPV4_ADDR_LEN];
-
         if (iface->config.ip.ipv4->unicast[i].ipv4.addr_type != NET_ADDR_DHCP) {
             continue;
         }
 
-        LOG_INF("IPv4 address: %s",
-                net_addr_ntop(AF_INET,
-                                &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
-                                buf, sizeof(buf)));
-        LOG_INF("Subnet: %s",
-                net_addr_ntop(AF_INET,
-                                &iface->config.ip.ipv4->unicast[i].netmask,
-                                buf, sizeof(buf)));
-        LOG_INF("Router: %s",
-                net_addr_ntop(AF_INET,
-                                &iface->config.ip.ipv4->gw,
-                                buf, sizeof(buf)));
-        }
-
         k_sem_give(&ipv4_address_obtained);
+    }
 }
 
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event, struct net_if *iface)
 {
-    LOG_INF("WiFi event: %d", (int)mgmt_event);
     switch (mgmt_event)
     {
 
@@ -123,7 +105,6 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t
             break;
 
         default:
-            LOG_INF("Unhandled");
             break;
     }
 }
@@ -138,9 +119,10 @@ void wifi_wait_for_ipv4(void)
     k_sem_take(&ipv4_address_obtained, K_SECONDS(10));
 }
 
-void wifi_init(void)
+int wifi_init(void)
 {
-    check_wifi_status();
+    int ret = check_wifi_status();
+    if (ret) return ret;
 
     net_mgmt_init_event_callback(&wifi_cb, wifi_mgmt_event_handler,
                                  NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
@@ -149,9 +131,11 @@ void wifi_init(void)
 
     net_mgmt_add_event_callback(&wifi_cb);
     net_mgmt_add_event_callback(&ipv4_cb);
+
+    return 0;
 }
 
-void wifi_connect(void)
+int wifi_connect(void)
 {
     struct net_if *iface = net_if_get_default();
 
@@ -171,10 +155,12 @@ void wifi_connect(void)
     if (net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &wifi_params, sizeof(struct wifi_connect_req_params)))
     {
         LOG_ERR("WiFi Connection Request Failed");
+        return -1;
     }
+    return 0;
 }
 
-void wifi_status(void)
+int wifi_status(void)
 {
     struct net_if *iface = net_if_get_default();
     
@@ -183,23 +169,19 @@ void wifi_status(void)
     if (net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status,	sizeof(struct wifi_iface_status)))
     {
         LOG_ERR("WiFi Status Request Failed");
+        return -1;
     }
-
-    if (status.state >= WIFI_STATE_ASSOCIATED) {
-        LOG_INF("SSID: %-32s", status.ssid);
-        LOG_INF("Band: %s", wifi_band_txt(status.band));
-        LOG_INF("Channel: %d", status.channel);
-        LOG_INF("Security: %s", wifi_security_txt(status.security));
-        LOG_INF("RSSI: %d", status.rssi);
-    }
+    return 0;
 }
 
-void wifi_disconnect(void)
+int wifi_disconnect(void)
 {
     struct net_if *iface = net_if_get_default();
 
     if (net_mgmt(NET_REQUEST_WIFI_DISCONNECT, iface, NULL, 0))
     {
         LOG_ERR("WiFi Disconnection Request Failed");
+        return -1;
     }
+    return 0;
 }
