@@ -10,9 +10,10 @@
 #include <zephyr/kernel.h>
 #include <zephyr/net/icmp.h>
 #include <zephyr/net/net_ip.h>
-#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(ping, LOG_LEVEL_INF);
+
+#define DEFAULT_PING_COUNT	4
 
 static int icmp_echo_reply_handler(struct net_icmp_ctx *ctx,
 				struct net_pkt *pkt,
@@ -43,10 +44,15 @@ void ping(char* ipv4_addr, uint8_t count)
 	int ret;
 	struct net_icmp_ctx icmp_context;
 
+	if (count == 0) {
+		count = DEFAULT_PING_COUNT;
+	}
+
 	// Register handler for echo reply
 	ret = net_icmp_init_ctx(&icmp_context, NET_ICMPV4_ECHO_REPLY, 0, icmp_echo_reply_handler);
 	if (ret != 0) {
 		LOG_ERR("Failed to init ping, err: %d", ret);
+		return;
 	}
 
 	struct net_if *iface = net_if_get_default();
@@ -60,7 +66,9 @@ void ping(char* ipv4_addr, uint8_t count)
 		ret = net_icmp_send_echo_request(&icmp_context, iface, (struct sockaddr *)&dst_addr, NULL, &cycles);
 		if (ret != 0) {
 			LOG_ERR("Failed to send ping, err: %d", ret);
+			break;
 		}
+		k_sleep(K_MSEC(1000)); // Wait 1 second between pings
 	}
 
 	net_icmp_cleanup_ctx(&icmp_context);

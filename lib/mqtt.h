@@ -5,6 +5,9 @@
 
 enum sensor_e {
     SENSOR_SOIL = 1,
+    SENSOR_TEMP = 2,
+    SENSOR_PRESS = 3,
+    SENSOR_HUM = 4,
 };
 
 int mqtt_service_init(void);

@@ -16,6 +16,8 @@
 
 LOG_MODULE_REGISTER(http_get, LOG_LEVEL_INF);
 
+#define HTTP_RECV_BUFFER_SIZE	512
+
 void nslookup(const char * hostname, struct zsock_addrinfo **results)
 {
 	int err;
@@ -28,9 +30,14 @@ void nslookup(const char * hostname, struct zsock_addrinfo **results)
 
 	err = zsock_getaddrinfo(hostname, NULL, &hints, (struct zsock_addrinfo **) results);
 	if (err) {
-		printf("getaddrinfo() failed, err %d\n", errno);
+		LOG_ERR("getaddrinfo() failed, err %d", errno);
 		return;
 	}
+}
+
+void free_addrinfo_results(struct zsock_addrinfo *results)
+{
+	zsock_freeaddrinfo(results);
 }
 
 void print_addrinfo_results(struct zsock_addrinfo **results)
@@ -46,13 +53,13 @@ void print_addrinfo_results(struct zsock_addrinfo **results)
 			// IPv4 Address
 			sa = (struct sockaddr_in *) rp->ai_addr;
 			zsock_inet_ntop(AF_INET, &sa->sin_addr, ipv4, INET_ADDRSTRLEN);
-			printf("IPv4: %s\n", ipv4);
+			LOG_INF("IPv4: %s", ipv4);
 		}
 		if (rp->ai_addr->sa_family == AF_INET6) {
 			// IPv6 Address
 			sa6 = (struct sockaddr_in6 *) rp->ai_addr;
 			zsock_inet_ntop(AF_INET6, &sa6->sin6_addr, ipv6, INET6_ADDRSTRLEN);
-			printf("IPv6: %s\n", ipv6);
+			LOG_INF("IPv6: %s", ipv6);
 		}
 	}
 }
@@ -133,21 +140,18 @@ static void http_response_cb(struct http_response *rsp,
 			void *user_data)
 {
 	if (final_data == HTTP_DATA_MORE) {
-		//printk("Partial data received (%zd bytes)\n", rsp->data_len);
+		// Partial data received
 	} else if (final_data == HTTP_DATA_FINAL) {
-		//printk("All the data received (%zd bytes)\n", rsp->data_len);
+		// All data received
 	}
 
-	//LOG_INF("Bytes Recv %zd", rsp->data_len);
-	//LOG_INF("Response status %s", rsp->http_status);
-	//LOG_INF("Recv Buffer Length %zd", rsp->recv_buf_len);
-	LOG_INF("%.*s", rsp->data_len, rsp->recv_buf);
+	LOG_INF("Response: %.*s", rsp->data_len, rsp->recv_buf);
 }
 
 void http_get(int sock, char * hostname, char * url)
 {
 	struct http_request req = { 0 };
-	static uint8_t recv_buf[512];
+	static uint8_t recv_buf[HTTP_RECV_BUFFER_SIZE];
 	int ret;
 
 	req.method = HTTP_GET;

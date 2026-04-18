@@ -18,6 +18,30 @@
     };
 };
 
+&pinctrl {
+    i2c0_default: i2c0_default {
+        group1 {
+            pinmux = <I2C0_SDA_GPIO10>,
+                     <I2C0_SCL_GPIO7>;
+            bias-pull-up;
+            drive-open-drain;
+            output-high;
+        };
+    };
+};
+
+&i2c0 {
+    status = "okay";
+    pinctrl-0 = <&i2c0_default>;
+    clock-frequency = <I2C_BITRATE_STANDARD>;
+    
+    bme280: bme280@76 {
+        compatible = "bosch,bme280";
+        reg = <0x76>;  /* Or 0x77 depending on your module's SDO pin */
+        status = "okay";
+    };
+};
+
 / {
     zephyr,user {
         /* IO4 (Pin 18) is ADC1 Channel 4 */
@@ -26,6 +50,8 @@
         pwr-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
         /* IO2 (Pin 5) for software GND */
         gnd-gpios = <&gpio0 2 GPIO_ACTIVE_LOW>; 
+
+        bme-pwr-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
     };
 };
 

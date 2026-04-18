@@ -15,13 +15,16 @@
 #include <zephyr/logging/log.h>
 
 #include <zephyr/device.h>
+#include "net_sample_common.h"
+LOG_MODULE_REGISTER(wifi, LOG_LEVEL_INF);
 
 const struct device *const wifi_dev = DEVICE_DT_GET(DT_NODELABEL(wifi));
 
-LOG_MODULE_REGISTER(wifi, LOG_LEVEL_INF);
+#define WIFI_CONNECT_TIMEOUT_SEC	10
+#define WIFI_IPV4_TIMEOUT_SEC		15
 
-#define SSID "WLAN-103581"
-#define PSK "77127547737885063079"
+#define WIFI_SSID	CONFIG_WIFI_SSID
+#define WIFI_PSK	CONFIG_WIFI_PSK
 
 static K_SEM_DEFINE(wifi_connected, 0, 1);
 static K_SEM_DEFINE(ipv4_address_obtained, 0, 1);
@@ -101,6 +104,7 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t
             break;
 
         case NET_EVENT_IPV4_ADDR_ADD:
+            LOG_INF("IPV4 connected");
             handle_ipv4_result(iface);
             break;
 
@@ -109,14 +113,14 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t
     }
 }
 
-void wifi_wait_for_connect(void)
+int wifi_wait_for_connect(void)
 {
-    k_sem_take(&wifi_connected, K_SECONDS(10));
+    return k_sem_take(&wifi_connected, K_SECONDS(WIFI_CONNECT_TIMEOUT_SEC));
 }
 
-void wifi_wait_for_ipv4(void)
+int wifi_wait_for_ipv4(void)
 {
-    k_sem_take(&ipv4_address_obtained, K_SECONDS(10));
+    return k_sem_take(&ipv4_address_obtained, K_SECONDS(WIFI_IPV4_TIMEOUT_SEC));
 }
 
 int wifi_init(void)
@@ -141,10 +145,10 @@ int wifi_connect(void)
 
     struct wifi_connect_req_params wifi_params = {0};
 
-    wifi_params.ssid = SSID;
-    wifi_params.psk = PSK;
-    wifi_params.ssid_length = strlen(SSID);
-    wifi_params.psk_length = strlen(PSK);
+    wifi_params.ssid = WIFI_SSID;
+    wifi_params.psk = WIFI_PSK;
+    wifi_params.ssid_length = strlen(WIFI_SSID);
+    wifi_params.psk_length = strlen(WIFI_PSK);
     wifi_params.channel = WIFI_CHANNEL_ANY;
     wifi_params.security = WIFI_SECURITY_TYPE_PSK;
     wifi_params.band = WIFI_FREQ_BAND_2_4_GHZ; 

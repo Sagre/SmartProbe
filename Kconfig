@@ -1,3 +1,15 @@
+config WIFI_SSID
+    string "WiFi SSID"
+    default "your_ssid_here"
+    help
+        The SSID of the WiFi network to connect to.
+
+config WIFI_PSK
+    string "WiFi Password"
+    default "your_password_here"
+    help
+        The password for the WiFi network.
+
 config MQTT_SERVER_ADDR
     string "MQTT Server Address"
     default "192.168.178.30"
@@ -33,5 +45,17 @@ config MQTT_BUFFER_SIZE
     default 128
     help
         Size of the MQTT RX and TX buffers in bytes.
+    
+config MOISTURE_SENSOR
+    bool "Moisture Sensor"
+    default y
+    help
+        Enable support for the moisture sensor.
+
+config ROOM_SENSOR
+    bool "Room Sensor"
+    default y
+    help
+        Enable support for the room sensor. 
 
 source "Kconfig.zephyr"

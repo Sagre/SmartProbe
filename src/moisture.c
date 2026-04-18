@@ -6,8 +6,11 @@ LOG_MODULE_REGISTER(moisture, LOG_LEVEL_INF);
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/fs/nvs.h>
-
 #include "moisture.h"
+
+#define CALIBRATION_ID			1
+#define MOISTURE_POWER_DELAY_MS		500
+#define CALIBRATION_DELAY_SEC		10
 
 /* Get references from the overlay */
 static const struct gpio_dt_spec pwr_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), pwr_gpios);
@@ -75,7 +78,7 @@ static int read_moisture(void) {
     };
 
     gpio_pin_set_dt(&pwr_gpio, 1);
-    k_msleep(500);
+    k_msleep(MOISTURE_POWER_DELAY_MS);
 
     adc_sequence_init_dt(&adc_chan, &sequence);
     int err = adc_read(adc_chan.dev, &sequence);
@@ -157,11 +160,11 @@ int moisture_init(void) {
     load_calibration(&rtc_data);
 
     if (rtc_data.cal_dry_raw == -1 || rtc_data.cal_wet_raw == -1) {
-        LOG_INF("No valid calibration found. Starting calibration. Dry in 10 seconds");
-        k_sleep(K_SECONDS(10));
+        LOG_INF("No valid calibration found. Starting calibration. Dry in %d seconds", CALIBRATION_DELAY_SEC);
+        k_sleep(K_SECONDS(CALIBRATION_DELAY_SEC));
         moisture_calibrate(MOISTURE_CAL_DRY);
-        LOG_INF("No valid calibration found. Starting calibration. Wet in 10 seconds");
-        k_sleep(K_SECONDS(10));
+        LOG_INF("No valid calibration found. Starting calibration. Wet in %d seconds", CALIBRATION_DELAY_SEC);
+        k_sleep(K_SECONDS(CALIBRATION_DELAY_SEC));
         moisture_calibrate(MOISTURE_CAL_WET);
         save_calibration(&rtc_data);
     }

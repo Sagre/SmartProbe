@@ -22,10 +22,8 @@ LOG_MODULE_REGISTER(mqtt_service, LOG_LEVEL_INF);
 #include <errno.h>
 #include "mqtt.h"
 
-#include "net_sample_common.h"
-
-#define APP_BMEM
-#define APP_DMEM
+#define MQTT_PAYLOAD_BUFFER_SIZE	128
+#define MQTT_TOPIC_BUFFER_SIZE		128
 
 #define SERVER_ADDR		CONFIG_MQTT_SERVER_ADDR
 
@@ -41,18 +39,18 @@ LOG_MODULE_REGISTER(mqtt_service, LOG_LEVEL_INF);
 #define MQTT_CLIENTID		CONFIG_MQTT_CLIENT_ID
 
 /* Buffers for MQTT client. */
-static APP_BMEM uint8_t rx_buffer[APP_MQTT_BUFFER_SIZE];
-static APP_BMEM uint8_t tx_buffer[APP_MQTT_BUFFER_SIZE];
+static uint8_t rx_buffer[APP_MQTT_BUFFER_SIZE];
+static uint8_t tx_buffer[APP_MQTT_BUFFER_SIZE];
 
 /* The mqtt client struct */
-static APP_BMEM struct mqtt_client client_ctx;
+static struct mqtt_client client_ctx;
 
 /* MQTT Broker details. */
-static APP_BMEM struct sockaddr_storage broker;
+static struct sockaddr_storage broker;
 
-static APP_BMEM struct pollfd fds[1];
-static APP_BMEM int nfds;
-static APP_BMEM bool connected;
+static struct pollfd fds[1];
+static int nfds;
+static bool connected;
 
 static const char SENSOR_TOPIC[] = "sensor/" CONFIG_MQTT_CLIENT_ID;
 
@@ -234,12 +232,12 @@ int mqtt_service_publish(const char *topic, const char *json_payload, enum mqtt_
 
 int mqtt_service_publish_sensor(enum sensor_e sensor, float value)
 {
-	char payload[128];
-	char topic[128];
+	char payload[MQTT_PAYLOAD_BUFFER_SIZE];
+	char topic[MQTT_TOPIC_BUFFER_SIZE];
 	int len = snprintk(payload, sizeof(payload), 
 					"{\"value\":%.2f}", (double)value);
 	if (len < 0 || len >= sizeof(payload)) {
-        LOG_ERR("Buffer too small!\n");
+        LOG_ERR("Payload buffer too small!");
         return -EINVAL;
     }
 
@@ -378,8 +376,6 @@ static K_HEAP_DEFINE(app_mem_pool, 1024 * 2);
 
 int mqtt_service_init(void)
 {
-	wait_for_network();
-
 #if defined(CONFIG_MQTT_LIB_TLS)
 	int rc;
 
