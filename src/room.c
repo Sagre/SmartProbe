@@ -1,14 +1,20 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
-#include <zephyr/logging/log.h>
 #include <zephyr/drivers/sensor_data_types.h>
+#include <zephyr/logging/log.h>
+
+#include "room.h"
 
 LOG_MODULE_REGISTER(room, LOG_LEVEL_INF);
 
-const struct device *const dev = DEVICE_DT_GET_ANY(bosch_bme280);
+static const struct gpio_dt_spec bmepwr = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), bme_pwr_gpios);
+static const struct device *const dev = DEVICE_DT_GET(DT_ALIAS(bme280));
+static bool initialized;
 
-int read_bme280(float *t, float *p, float *h) {
+static int fetch_sensor_channel(enum sensor_channel chan, float *value)
+{
     if (dev == NULL) {
         LOG_ERR("No BME280 device found in devicetree");
         return -ENODEV;
@@ -19,30 +25,62 @@ int read_bme280(float *t, float *p, float *h) {
         return -ENODEV;
     }
 
-    LOG_INF("BME280 device %s is ready", dev->name);
+    struct sensor_value sensor_val;
 
-    struct sensor_value temp, press, hum;
-
-    /* Fetch fresh samples from all channels */
     int ret = sensor_sample_fetch(dev);
     if (ret < 0) {
         LOG_ERR("sensor_sample_fetch failed: %d", ret);
         return ret;
     }
 
-    /* Read individual channels */
-    sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
-    sensor_channel_get(dev, SENSOR_CHAN_PRESS, &press);
-    sensor_channel_get(dev, SENSOR_CHAN_HUMIDITY, &hum);
+    ret = sensor_channel_get(dev, chan, &sensor_val);
+    if (ret < 0) {
+        LOG_ERR("sensor_channel_get for channel %d failed: %d", chan, ret);
+        return ret;
+    }
 
-    LOG_INF("Temp: %d.%06d °C | Press: %d.%06d kPa | Hum: %d.%06d %%RH",
-            temp.val1, temp.val2,
-            press.val1, press.val2,
-            hum.val1, hum.val2);
-    
-    *t = (float)temp.val1 + (float)temp.val2 / 1000000.0f;
-    *p = (float)press.val1 + (float)press.val2 / 1000000.0f;
-    *h = (float)hum.val1 + (float)hum.val2 / 1000000.0f;
-
+    *value = (float)sensor_val.val1 + (float)sensor_val.val2 / 1000000.0f;
     return 0;
+}
+
+int room_init(void)
+{
+    if (initialized) {
+        return 0;
+    }
+
+    if (!device_is_ready(bmepwr.port)) {
+        LOG_ERR("BME280 power GPIO not ready");
+        return -ENODEV;
+    }
+
+    if (!device_is_ready(dev)) {
+        LOG_ERR("BME280 device not ready");
+        return -ENODEV;
+    }
+
+    int err = gpio_pin_configure_dt(&bmepwr, GPIO_OUTPUT_INACTIVE);
+    if (err) {
+        LOG_ERR("Failed to configure BME280 power GPIO: %d", err);
+        return err;
+    }
+
+    gpio_pin_set_dt(&bmepwr, 1);
+    initialized = true;
+    return 0;
+}
+
+int room_read_temperature(float *value)
+{
+    return fetch_sensor_channel(SENSOR_CHAN_AMBIENT_TEMP, value);
+}
+
+int room_read_pressure(float *value)
+{
+    return fetch_sensor_channel(SENSOR_CHAN_PRESS, value);
+}
+
+int room_read_humidity(float *value)
+{
+    return fetch_sensor_channel(SENSOR_CHAN_HUMIDITY, value);
 }

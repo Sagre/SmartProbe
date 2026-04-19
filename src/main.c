@@ -3,6 +3,7 @@
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/net/net_event.h>
 #include <errno.h>
+#include <string.h>
 #include "ping.h"
 #include "wifi.h"
 #include "mqtt.h"
@@ -10,6 +11,7 @@
 #include <esp_sleep.h>
 #include "moisture.h"
 #include "room.h"
+#include "sensor_module.h"
 #include <zephyr/logging/log.h>
 #include <zephyr/pm/pm.h>
 #include <zephyr/pm/device.h>
@@ -21,8 +23,6 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #define LED_BLINK_DELAY_MS	500
 #define MQTT_DISCONNECT_DELAY_MS	1000
 #define DEEP_SLEEP_DURATION_SEC	60
-
-static const struct gpio_dt_spec bme_pwr = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), bme_pwr_gpios);
 
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
@@ -57,22 +57,105 @@ void blink_led(int times, int delay_ms) {
     }
 }
 
+static const struct sensor_module sensors[] = {
+#ifdef CONFIG_MOISTURE_SENSOR
+    {
+        .key = "soil",
+        .label = "Soil",
+        .unit = "%",
+        .init = moisture_init,
+        .read = moisture_read_percent,
+        .err_value = MOISTURE_ERROR_VALUE,
+    },
+#endif
+#ifdef CONFIG_ROOM_SENSOR
+    {
+        .key = "temp",
+        .label = "Temperature",
+        .unit = "C°",
+        .init = room_init,
+        .read = room_read_temperature,
+        .err_value = ROOM_ERROR_VALUE,
+    },
+    {
+        .key = "press",
+        .label = "Pressure",
+        .unit = "kPa",
+        .init = room_init,
+        .read = room_read_pressure,
+        .err_value = ROOM_ERROR_VALUE,
+    },
+    {
+        .key = "hum",
+        .label = "Humidity",
+        .unit = "%",
+        .init = room_init,
+        .read = room_read_humidity,
+        .err_value = ROOM_ERROR_VALUE,
+    },
+#endif
+};
+
+static int initialize_sensors(void)
+{
+    for (size_t i = 0; i < ARRAY_SIZE(sensors); i++) {
+        if (sensors[i].init) {
+            int err = sensors[i].init();
+            if (err != 0) {
+                LOG_ERR("Sensor %s init failed: %d", sensors[i].key, err);
+                return err;
+            }
+        }
+    }
+    return 0;
+}
+
+static enum sensor_e sensor_key_to_enum(const char *key)
+{
+    if (strcmp(key, "soil") == 0) {
+        return SENSOR_SOIL;
+    }
+    if (strcmp(key, "temp") == 0) {
+        return SENSOR_TEMP;
+    }
+    if (strcmp(key, "press") == 0) {
+        return SENSOR_PRESS;
+    }
+    if (strcmp(key, "hum") == 0) {
+        return SENSOR_HUM;
+    }
+
+    return 0;
+}
+
+static void read_and_publish_sensors(void)
+{
+    for (size_t i = 0; i < ARRAY_SIZE(sensors); i++) {
+        float value;
+        int err = sensors[i].read(&value);
+        if (err != 0 || value == sensors[i].err_value) {
+            LOG_ERR("Failed to read %s sensor: %d", sensors[i].key, err);
+            continue;
+        }
+
+        enum sensor_e sensor_id = sensor_key_to_enum(sensors[i].key);
+        if (sensor_id == 0) {
+            LOG_ERR("Unknown sensor key for MQTT publish: %s", sensors[i].key);
+            continue;
+        }
+
+        if (mqtt_service_publish_sensor(sensor_id, value) != 0) {
+            LOG_ERR("MQTT publish failed for %s", sensors[i].key);
+            blink_led(4, 2000);
+        }
+    }
+}
+
 int main(void)
 {
     pm_policy_state_lock_get(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
     pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
     
-    if (!gpio_is_ready_dt(&bme_pwr)) {
-        return -ENODEV;
-    }
-
-    int err = gpio_pin_configure_dt(&bme_pwr, GPIO_OUTPUT_INACTIVE);
-    if (err < 0) return err;
-
-    /* 2. Power on the sensor */
-    LOG_INF("Powering on BME280 via GPIO5...");
-    gpio_pin_set_dt(&bme_pwr, 1);
-
     if (init_led() != 0) {
         LOG_ERR("Failed to init LED");
         goto cleanup;
@@ -123,53 +206,13 @@ int main(void)
         goto cleanup;
     }
 
-#ifdef CONFIG_MOISTURE_SENSOR
-    if (moisture_init() != 0) {
-        LOG_ERR("Moisture init failed");
-        blink_led(4, 2000);
+    if (initialize_sensors() != 0) {
+        LOG_ERR("Sensor initialization failed");
+        blink_led(5, MQTT_DISCONNECT_DELAY_MS);
         goto cleanup;
     }
 
-    int moisture = moisture_read_percent();
-    if (moisture >= 0 && moisture <= 100) {
-        if (mqtt_service_publish_sensor(SENSOR_SOIL, (float)moisture) != 0) {
-            blink_led(4, 2000);
-            LOG_ERR("MQTT publish failed");
-        }
-    } else {
-        blink_led(4, 2000);
-        LOG_ERR("Invalid moisture reading: %d", moisture);
-    }
-#endif /* CONFIG_MOISTURE_SENSOR */
-
-#ifdef CONFIG_ROOM_SENSOR
-
-    float t, p, h;
-
-    if (read_bme280(&t, &p, &h) == 0) {
-        LOG_INF("Temperature: %f C", (double)t);
-        LOG_INF("Pressure:    %f kPa", (double)p);
-        LOG_INF("Humidity:    %f %%", (double)h);
-        if (mqtt_service_publish_sensor(SENSOR_TEMP, t) != 0) {
-            LOG_ERR("MQTT publish failed for temperature");
-            blink_led(4, 2000);
-            k_sleep(K_MSEC(500));
-        }
-        if (mqtt_service_publish_sensor(SENSOR_PRESS, p) != 0) {
-            LOG_ERR("MQTT publish failed for pressure");
-            blink_led(4, 2000);
-            k_sleep(K_MSEC(500));
-        }
-        if (mqtt_service_publish_sensor(SENSOR_HUM, h)  != 0) {
-            LOG_ERR("MQTT publish failed for humidity");
-            blink_led(4, 2000);
-            k_sleep(K_MSEC(500));
-        }
-    } else {
-        LOG_ERR("Could not read BME280 sensor");
-        blink_led(4, 2000);
-    }
-#endif /* CONFIG_ROOM_SENSOR */
+    read_and_publish_sensors();
 
     k_sleep(K_SECONDS(1));
     mqtt_service_disconnect();

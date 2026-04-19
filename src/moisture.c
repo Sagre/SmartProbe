@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(moisture, LOG_LEVEL_INF);
@@ -17,8 +18,6 @@ static const struct gpio_dt_spec pwr_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user
 static const struct gpio_dt_spec gnd_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), gnd_gpios);
 static const struct adc_dt_spec adc_chan = ADC_DT_SPEC_GET_BY_IDX(DT_PATH(zephyr_user), 0);
 
-#define CALIBRATION_ID 1
-
 struct persistent_data {
     int32_t cal_dry_raw;
     int32_t cal_wet_raw;
@@ -35,14 +34,14 @@ void init_nvs(void) {
     /* Define the flash partition to use (storage_partition is default on ESP32) */
     fs.flash_device = FIXED_PARTITION_DEVICE(storage_partition);
     if (!device_is_ready(fs.flash_device)) {
-        printk("Flash device not ready\n");
+        LOG_ERR("Flash device not ready");
         return;
     }
 
     fs.offset = FIXED_PARTITION_OFFSET(storage_partition);
     rc = flash_get_page_info_by_offs(fs.flash_device, fs.offset, &info);
     if (rc) {
-        printk("Unable to get page info\n");
+        LOG_ERR("Unable to get page info: %d", rc);
         return;
     }
 
@@ -50,8 +49,11 @@ void init_nvs(void) {
     fs.sector_count = 3; // Use 3 sectors for wear leveling
 
     rc = nvs_mount(&fs);
+    if (rc == -EEXIST) {
+        return;
+    }
     if (rc) {
-        printk("Flash Init failed\n");
+        LOG_ERR("Flash init failed: %d", rc);
     }
 }
 
@@ -62,11 +64,11 @@ void save_calibration(struct persistent_data *data) {
 void load_calibration(struct persistent_data *data) {
     int rc = nvs_read(&fs, CALIBRATION_ID, data, sizeof(struct persistent_data));
     if (rc <= 0) {
-        printk("No calibration found, setting defaults\n");
+        LOG_INF("No calibration found, setting defaults");
         data->cal_dry_raw = -1;
         data->cal_wet_raw = -1;
     } else {
-        printk("Loaded: Dry=%d, Wet=%d\n", data->cal_dry_raw, data->cal_wet_raw);
+        LOG_INF("Loaded: Dry=%d, Wet=%d", data->cal_dry_raw, data->cal_wet_raw);
     }
 }
 
@@ -105,38 +107,43 @@ void moisture_calibrate(enum moisture_cal_type type) {
     }
 }
 
-int moisture_read_percent(void) {
+int moisture_read_percent(float *value) {
     int raw = read_moisture();
-    if (raw < 0) return raw;
-
-    if (rtc_data.cal_dry_raw == -1 || rtc_data.cal_wet_raw == -1) {
-        LOG_WRN("Missing calibration. Set both DRY and WET points. Returning raw: %d", raw);
+    if (raw < 0) {
         return raw;
     }
 
+    if (rtc_data.cal_dry_raw == -1 || rtc_data.cal_wet_raw == -1) {
+        LOG_WRN("Missing calibration. Set both DRY and WET points.");
+        return -EIO;
+    }
+
     if (raw > rtc_data.cal_dry_raw || raw < rtc_data.cal_wet_raw) {
-        LOG_WRN("Measured raw value %d is outside calibration range [%d, %d]", 
+        LOG_WRN("Measured raw value %d is outside calibration range [%d, %d]",
                 raw, rtc_data.cal_wet_raw, rtc_data.cal_dry_raw);
     }
 
     int32_t range = rtc_data.cal_dry_raw - rtc_data.cal_wet_raw;
     if (range <= 0) {
         LOG_ERR("Invalid calibration range: Dry must be > Wet");
-        return -1;
+        return -EINVAL;
     }
 
     int32_t percentage = ((rtc_data.cal_dry_raw - raw) * 100) / range;
 
     if (percentage < 0) {
         percentage = 0;
-        LOG_WRN("Measured value is below min value: %d, Measured: %d, Dry: %d, Wet: %d", percentage, raw, rtc_data.cal_dry_raw, rtc_data.cal_wet_raw);
+        LOG_WRN("Measured value is below min value: %d, Measured: %d, Dry: %d, Wet: %d",
+                percentage, raw, rtc_data.cal_dry_raw, rtc_data.cal_wet_raw);
     }
     if (percentage > 100) {
         percentage = 100;
-        LOG_WRN("Measured value is above min value: %d, Measured: %d, Dry: %d, Wet: %d", percentage, raw, rtc_data.cal_dry_raw, rtc_data.cal_wet_raw);
+        LOG_WRN("Measured value is above max value: %d, Measured: %d, Dry: %d, Wet: %d",
+                percentage, raw, rtc_data.cal_dry_raw, rtc_data.cal_wet_raw);
     }
 
-    return (int)percentage;
+    *value = (float)percentage;
+    return 0;
 }
 
 int moisture_init(void) {

@@ -5,10 +5,20 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(esp32_wifi)
 
 
-FILE(GLOB app_sources src/*.c)
-FILE(GLOB lib_sources ../lib/*.c)
-target_sources(app PRIVATE ${app_sources} ${lib_sources})
-target_link_libraries(app PRIVATE)
+set(APP_SOURCES
+    src/main.c
+    src/moisture.c
+    src/room.c
+)
+
+set(LIB_SOURCES
+    ../lib/http_get.c
+    ../lib/mqtt.c
+    ../lib/ping.c
+    ../lib/wifi.c
+)
+
+target_sources(app PRIVATE ${APP_SOURCES} ${LIB_SOURCES})
 target_include_directories(app PRIVATE ../lib)
 
 add_compile_options(-Wno-gcc-extension -Wno-extension)

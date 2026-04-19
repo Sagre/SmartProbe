@@ -5,6 +5,8 @@
 / {
     aliases {
         led0 = &status_led;
+        bme280 = &bme280;
+        bmepwr = &bme_power;
     };
 
     leds {
@@ -15,6 +17,11 @@
             gpios = <&gpio0 8 GPIO_ACTIVE_LOW>;
             label = "User Status LED";
         };
+    };
+
+    bme_power: bme_power {
+        compatible = "gpio-power";
+        gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
     };
 };
 
